@@ -1,3 +1,4 @@
+import uvicorn  # 👈 Добавлен импорт uvicorn
 import sys
 import asyncio
 from fastapi import FastAPI
@@ -5,9 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth, universities, admin
 
-# Исправление для ошибки "NotImplementedError" или зависаний с asyncpg на Windows
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# Примечание: Исправление для Windows перенесено вниз, в блок main,
+# чтобы не конфликтовать с авто-перезагрузкой.
 
 app = FastAPI(
     title="University DataHub API",
@@ -37,7 +37,17 @@ async def root():
         "docs": "/docs"
     }
 
-
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+# 👇 ДОБАВЛЕН КОД ДЛЯ ЗАПУСКА НА ПОРТУ 8080
+if __name__ == "__main__":
+    # Исправление для ошибки с asyncpg на Windows
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    # Запуск сервера
+    # host="0.0.0.0" делает сервер доступным в локальной сети
+    # reload=True включает авто-перезагрузку при изменении кода
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8080, reload=True)

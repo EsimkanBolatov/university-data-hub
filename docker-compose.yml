@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:16
+    image: postgres:17
     container_name: university_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -22,7 +22,7 @@ services:
     build: .
     container_name: university_backend
     ports:
-      - "8000:8000"
+      - "8080:8080"
     env_file:
       - .env
     depends_on:
