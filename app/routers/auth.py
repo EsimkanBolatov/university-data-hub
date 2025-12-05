@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.db.database import get_db
-from app.db.models import User
+from app.db.models import User, RoleEnum
 from app.schemas.user import UserCreate, UserResponse, Token
 from app.dependencies import get_current_user
 
@@ -36,7 +36,7 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
         email=user_data.email,
         password_hash=hashed_password,
         full_name=user_data.full_name,
-        role="user"
+        role=RoleEnum.USER
     )
 
     db.add(new_user)
