@@ -14,7 +14,12 @@ python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
 
+# Валидация
+email-validator
+
 # Дополнительно
 python-dateutil==2.9.0.post0
 
-email-validator
+# Для парсинга (опционально)
+beautifulsoup4==4.12.3
+requests==2.31.0
