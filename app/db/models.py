@@ -1,9 +1,14 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum, Text, Boolean, Date, JSON
+from sqlalchemy import Table, Column, Integer, String, Float, ForeignKey, Enum, Text, Boolean, Date, JSON
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
+university_professions = Table(
+    'university_professions', Base.metadata,
+    Column('university_id', Integer, ForeignKey('universities.id'), primary_key=True),
+    Column('profession_id', Integer, ForeignKey('professions.id'), primary_key=True)
+)
 
 class RoleEnum(str, enum.Enum):
     USER = "user"
@@ -112,12 +117,20 @@ class University(Base):
     has_dormitory = Column(Boolean, default=False)
     has_military_department = Column(Boolean, default=False)
 
+    # Новые поля для расширенной информации
+    mission = Column(Text, nullable=True)
+    history_json = Column(JSON, nullable=True)  # История по годам
+    contacts_json = Column(JSON, nullable=True)  # Соцсети, телефоны
+    achievements = Column(Text, nullable=True)  # Статус из JSON
+
     # Связи
     programs = relationship("Program", back_populates="university", cascade="all, delete-orphan")
     faculties = relationship("Faculty", back_populates="university", cascade="all, delete-orphan")
     dormitories = relationship("Dormitory", back_populates="university", cascade="all, delete-orphan")
     grants = relationship("Grant", back_populates="university", cascade="all, delete-orphan")
     partnerships = relationship("Partnership", back_populates="university", cascade="all, delete-orphan")
+    professions = relationship("Profession", secondary=university_professions, back_populates="universities")
+
 
 
 class Faculty(Base):
@@ -319,3 +332,16 @@ class Admission(Base):
 
     # Связи
     university = relationship("University")
+
+# ============ ПРОФЕССИИ ============
+class Profession(Base):
+    """Справочник профессий/специальностей"""
+    __tablename__ = "professions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, index=True, nullable=False)  # Например: 6B06113
+    name = Column(String, index=True, nullable=False)  # Программирование
+    degree = Column(String)  # Бакалавриат/Магистратура/PhD
+    
+    # Связь с вузами
+    universities = relationship("University", secondary=university_professions, back_populates="professions")

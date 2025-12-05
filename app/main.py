@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, universities
+from app.routers import auth, universities, admin
+
 
 app = FastAPI(
     title="University DataHub API",
@@ -21,7 +22,7 @@ app.add_middleware(
 # Подключаем роутеры
 app.include_router(auth.router)
 app.include_router(universities.router)
-
+app.include_router(admin.router)
 
 @app.get("/")
 async def root():
