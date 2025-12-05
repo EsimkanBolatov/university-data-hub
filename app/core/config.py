@@ -24,6 +24,15 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    OPENAI_API_KEY: str | None = None  
+    OPENAI_MODEL: str = "gpt-4o"       
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+
     @model_validator(mode='after')
     def assemble_db_connection(self):
         if self.DATABASE_URL:

@@ -69,7 +69,7 @@ class UniversityImportSchema(BaseModel):
     contacts: Optional[ContactSchema] = Field(alias="Контакты", default=None)
     
     # Список профессий (в UIB файле он не найден, но может быть в других)
-    professions: List[str] = Field(alias="Список_всех_профессий_и_специальностей", default_factory=list)
+    professions: Dict[str, List[str]] = Field(alias="Список_всех_профессий_и_специальностей", default_factory=list)
 
     class Config:
         extra = "ignore" # Игнорировать неизвестные поля, чтобы не падать

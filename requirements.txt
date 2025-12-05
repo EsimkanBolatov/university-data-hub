@@ -10,8 +10,8 @@ asyncpg==0.30.0
 alembic==1.13.0
 
 # Безопасность
-python-jose[cryptography]==3.4.0
-bcrypt>=4.0.1                     # <-- ИЗМЕНЕНО: вместо passlib
+pyjwt==2.8.0
+bcrypt>=4.0.1
 python-multipart==0.0.20
 
 # Валидация
@@ -20,6 +20,17 @@ email-validator
 # Дополнительно
 python-dateutil==2.9.0.post0
 
-# Для парсинга (опционально)
+# Для парсинга файлов (PDF, Word, Excel, Web)
 beautifulsoup4==4.12.3
 requests==2.31.0
+python-docx
+pypdf
+openpyxl
+
+# AI Module (Искусственный интеллект)
+openai>=1.0.0
+langchain>=0.1.0
+langchain-openai
+langchain-community
+chromadb
+tiktoken
