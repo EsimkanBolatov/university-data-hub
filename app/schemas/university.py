@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import date
 from enum import Enum
@@ -16,7 +16,7 @@ class DegreeTypeEnum(str, Enum):
     PHD = "phd"
 
 
-# ============= ФАКУЛЬТЕТЫ =============
+# ============= ДЕПАРТАМЕНТЫ/КАФЕДРЫ =============
 class DepartmentBase(BaseModel):
     name_ru: str
     name_kz: Optional[str] = None
@@ -34,6 +34,7 @@ class DepartmentResponse(DepartmentBase):
         from_attributes = True
 
 
+# ============= ФАКУЛЬТЕТЫ =============
 class FacultyBase(BaseModel):
     name_ru: str
     name_kz: Optional[str] = None
@@ -171,6 +172,30 @@ class PartnershipResponse(PartnershipBase):
         from_attributes = True
 
 
+# ============= ПОСТУПЛЕНИЕ (НОВОЕ) =============
+class AdmissionBase(BaseModel):
+    degree: DegreeTypeEnum
+    application_start: Optional[date] = None
+    application_end: Optional[date] = None
+    exam_dates: Optional[dict] = None
+    required_documents: Optional[List[str]] = None
+    min_score: Optional[int] = None
+    application_process: Optional[str] = None
+    contacts: Optional[str] = None
+
+
+class AdmissionCreate(AdmissionBase):
+    university_id: int
+
+
+class AdmissionResponse(AdmissionBase):
+    id: int
+    university_id: int
+
+    class Config:
+        from_attributes = True
+
+
 # ============= УНИВЕРСИТЕТЫ =============
 class UniversityBase(BaseModel):
     # Основная информация
@@ -248,6 +273,8 @@ class UniversityUpdate(BaseModel):
     rating: Optional[float] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
 
 
 class UniversityListResponse(BaseModel):
@@ -258,7 +285,9 @@ class UniversityListResponse(BaseModel):
     rating: float
     logo_url: Optional[str] = None
     has_dormitory: bool
-    price_range: Optional[str] = None  # Будет вычисляться
+    price_range: Optional[str] = None
+    programs_count: Optional[int] = 0
+    description: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -292,6 +321,16 @@ class UniversityCompareResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============= СТАТИСТИКА (НОВОЕ) =============
+class UniversityStatsResponse(BaseModel):
+    total_universities: int
+    total_programs: int
+    total_cities: int
+    total_students: int
+    average_tuition: int
+    top_universities: List[dict]
 
 
 # ============= ПОИСК =============

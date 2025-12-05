@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_, text
 from typing import List
 
 from app.db.database import get_db
@@ -26,11 +26,60 @@ from app.schemas.university import (
     DormitoryResponse,
     PartnershipCreate,
     PartnershipResponse,
-    SearchFilters
+    AdmissionCreate,
+    AdmissionResponse,
+    UniversityStatsResponse
 )
 from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/universities", tags=["Universities"])
+
+
+# ============= СТАТИСТИКА =============
+
+@router.get("/stats", response_model=UniversityStatsResponse)
+async def get_statistics(db: AsyncSession = Depends(get_db)):
+    """Получить общую статистику по платформе"""
+
+    # Количество университетов
+    uni_count = await db.scalar(select(func.count(University.id)))
+
+    # Количество программ
+    prog_count = await db.scalar(select(func.count(Program.id)))
+
+    # Количество городов
+    cities_count = await db.scalar(
+        select(func.count(func.distinct(University.city)))
+    )
+
+    # Общее количество студентов
+    total_students = await db.scalar(
+        select(func.sum(University.total_students))
+    ) or 0
+
+    # Средняя цена обучения
+    avg_price = await db.scalar(
+        select(func.avg(Program.price)).where(Program.price.isnot(None))
+    ) or 0
+
+    # Топ 5 университетов по рейтингу
+    top_unis_query = select(University).order_by(
+        University.rating.desc()
+    ).limit(5)
+    result = await db.execute(top_unis_query)
+    top_universities = result.scalars().all()
+
+    return UniversityStatsResponse(
+        total_universities=uni_count,
+        total_programs=prog_count,
+        total_cities=cities_count,
+        total_students=total_students,
+        average_tuition=round(avg_price),
+        top_universities=[
+            {"id": u.id, "name": u.name_ru, "rating": u.rating}
+            for u in top_universities
+        ]
+    )
 
 
 # ============= ОСНОВНЫЕ ЭНДПОИНТЫ =============
@@ -41,12 +90,13 @@ async def get_universities(
         type: str | None = None,
         has_dormitory: bool | None = None,
         min_rating: float | None = None,
+        max_price: int | None = None,
         query: str | None = None,
         limit: int = Query(20, ge=1, le=100),
         offset: int = Query(0, ge=0),
         db: AsyncSession = Depends(get_db)
 ):
-    """Получить список университетов с фильтрацией"""
+    """Получить список университетов с фильтрацией и умным поиском"""
     stmt = select(University)
 
     if city:
@@ -61,14 +111,24 @@ async def get_universities(
     if min_rating:
         stmt = stmt.where(University.rating >= min_rating)
 
+    # Фильтр по максимальной цене программ
+    if max_price:
+        subquery = select(Program.university_id).where(
+            Program.price <= max_price
+        ).distinct()
+        stmt = stmt.where(University.id.in_(subquery))
+
+    # УЛУЧШЕННЫЙ ПОИСК: PostgreSQL Full-Text Search
     if query:
-        search = f"%{query}%"
+        # Используем триграммы для нечеткого поиска
+        search_pattern = f"%{query}%"
         stmt = stmt.where(
             or_(
-                University.name_ru.ilike(search),
-                University.name_kz.ilike(search),
-                University.name_en.ilike(search),
-                University.description.ilike(search)
+                University.name_ru.ilike(search_pattern),
+                University.name_kz.ilike(search_pattern),
+                University.name_en.ilike(search_pattern),
+                University.description.ilike(search_pattern),
+                University.city.ilike(search_pattern)
             )
         )
 
@@ -77,32 +137,37 @@ async def get_universities(
     result = await db.execute(stmt)
     universities = result.scalars().all()
 
-    # Добавляем диапазон цен
+    # Добавляем диапазон цен и количество программ
     response = []
     for uni in universities:
-        uni_dict = {
-            "id": uni.id,
-            "name_ru": uni.name_ru,
-            "city": uni.city,
-            "type": uni.type,
-            "rating": uni.rating,
-            "logo_url": uni.logo_url,
-            "has_dormitory": uni.has_dormitory,
-            "price_range": None
-        }
-
         # Получаем диапазон цен программ
         price_query = select(
             func.min(Program.price),
-            func.max(Program.price)
+            func.max(Program.price),
+            func.count(Program.id)
         ).where(Program.university_id == uni.id)
         price_result = await db.execute(price_query)
-        min_price, max_price = price_result.one()
+        min_price, max_price_uni, prog_count = price_result.one()
 
-        if min_price and max_price:
-            uni_dict["price_range"] = f"{min_price:,} - {max_price:,} ₸"
+        price_range = None
+        if min_price and max_price_uni:
+            if min_price == max_price_uni:
+                price_range = f"{min_price:,} ₸"
+            else:
+                price_range = f"{min_price:,} - {max_price_uni:,} ₸"
 
-        response.append(UniversityListResponse(**uni_dict))
+        response.append(UniversityListResponse(
+            id=uni.id,
+            name_ru=uni.name_ru,
+            city=uni.city,
+            type=uni.type.value if uni.type else "public",
+            rating=uni.rating,
+            logo_url=uni.logo_url,
+            has_dormitory=uni.has_dormitory,
+            price_range=price_range,
+            programs_count=prog_count,
+            description=uni.description
+        ))
 
     return response
 
@@ -224,6 +289,7 @@ async def search_programs(
         min_price: int | None = None,
         max_price: int | None = None,
         city: str | None = None,
+        university_id: int | None = None,
         query: str | None = None,
         limit: int = Query(50, ge=1, le=200),
         db: AsyncSession = Depends(get_db)
@@ -243,17 +309,21 @@ async def search_programs(
     if city:
         stmt = stmt.where(University.city.ilike(f"%{city}%"))
 
+    if university_id:
+        stmt = stmt.where(Program.university_id == university_id)
+
     if query:
         search = f"%{query}%"
         stmt = stmt.where(
             or_(
                 Program.name_ru.ilike(search),
                 Program.name_kz.ilike(search),
-                Program.description.ilike(search)
+                Program.description.ilike(search),
+                Program.code.ilike(search)
             )
         )
 
-    stmt = stmt.limit(limit)
+    stmt = stmt.order_by(Program.price.asc()).limit(limit)
     result = await db.execute(stmt)
     programs = result.scalars().all()
 
@@ -336,6 +406,40 @@ async def add_dormitory(
     return new_dormitory
 
 
+# ============= ПОСТУПЛЕНИЕ (НОВОЕ) =============
+
+@router.post("/{university_id}/admissions", response_model=AdmissionResponse)
+async def add_admission_info(
+        university_id: int,
+        admission_data: AdmissionCreate,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """Добавить информацию о поступлении"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+    new_admission = Admission(**admission_data.model_dump())
+    db.add(new_admission)
+    await db.commit()
+    await db.refresh(new_admission)
+
+    return new_admission
+
+
+@router.get("/{university_id}/admissions", response_model=List[AdmissionResponse])
+async def get_admission_info(
+        university_id: int,
+        db: AsyncSession = Depends(get_db)
+):
+    """Получить информацию о поступлении"""
+    stmt = select(Admission).where(Admission.university_id == university_id)
+    result = await db.execute(stmt)
+    admissions = result.scalars().all()
+
+    return admissions
+
+
 # ============= СРАВНЕНИЕ =============
 
 @router.post("/compare", response_model=List[UniversityCompareResponse])
@@ -343,7 +447,7 @@ async def compare_universities(
         university_ids: List[int],
         db: AsyncSession = Depends(get_db)
 ):
-    """Сравнение университетов"""
+    """Сравнение университетов (2-5 штук)"""
     if len(university_ids) < 2 or len(university_ids) > 5:
         raise HTTPException(
             status_code=400,
@@ -378,7 +482,7 @@ async def compare_universities(
             id=uni.id,
             name_ru=uni.name_ru,
             city=uni.city,
-            type=uni.type,
+            type=uni.type.value if uni.type else "public",
             rating=uni.rating,
             total_students=uni.total_students,
             programs_count=programs_count,
@@ -400,7 +504,6 @@ async def add_to_favorites(
         current_user: User = Depends(get_current_user)
 ):
     """Добавить в избранное"""
-    # Проверяем существование университета
     stmt = select(University).where(University.id == university_id)
     result = await db.execute(stmt)
     university = result.scalar_one_or_none()
@@ -408,10 +511,11 @@ async def add_to_favorites(
     if not university:
         raise HTTPException(status_code=404, detail="Университет не найден")
 
-    # Проверяем, не добавлен ли уже
     check_stmt = select(Favorite).where(
-        Favorite.user_id == current_user.id,
-        Favorite.university_id == university_id
+        and_(
+            Favorite.user_id == current_user.id,
+            Favorite.university_id == university_id
+        )
     )
     check_result = await db.execute(check_stmt)
     existing = check_result.scalar_one_or_none()
@@ -434,8 +538,10 @@ async def remove_from_favorites(
 ):
     """Удалить из избранного"""
     stmt = select(Favorite).where(
-        Favorite.user_id == current_user.id,
-        Favorite.university_id == university_id
+        and_(
+            Favorite.user_id == current_user.id,
+            Favorite.university_id == university_id
+        )
     )
     result = await db.execute(stmt)
     favorite = result.scalar_one_or_none()
@@ -461,4 +567,30 @@ async def get_my_favorites(
     result = await db.execute(stmt)
     universities = result.scalars().all()
 
-    return universities
+    response = []
+    for uni in universities:
+        price_query = select(
+            func.min(Program.price),
+            func.max(Program.price),
+            func.count(Program.id)
+        ).where(Program.university_id == uni.id)
+        price_result = await db.execute(price_query)
+        min_price, max_price_uni, prog_count = price_result.one()
+
+        price_range = None
+        if min_price and max_price_uni:
+            price_range = f"{min_price:,} - {max_price_uni:,} ₸"
+
+        response.append(UniversityListResponse(
+            id=uni.id,
+            name_ru=uni.name_ru,
+            city=uni.city,
+            type=uni.type.value if uni.type else "public",
+            rating=uni.rating,
+            logo_url=uni.logo_url,
+            has_dormitory=uni.has_dormitory,
+            price_range=price_range,
+            programs_count=prog_count
+        ))
+
+    return response
