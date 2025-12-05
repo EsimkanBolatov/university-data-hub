@@ -18,12 +18,6 @@ class Settings(BaseSettings):
     # URL базы (для продакшена)
     DATABASE_URL: str | None = None
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
-
     OPENAI_API_KEY: str | None = None  
     OPENAI_MODEL: str = "gpt-4o"       
 
@@ -35,19 +29,31 @@ class Settings(BaseSettings):
 
     @model_validator(mode='after')
     def assemble_db_connection(self):
+        # Railway предоставляет DATABASE_URL
         if self.DATABASE_URL:
+            # Конвертируем postgres:// в postgresql+asyncpg://
             if self.DATABASE_URL.startswith("postgres://"):
-                self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+                self.DATABASE_URL = self.DATABASE_URL.replace(
+                    "postgres://", "postgresql+asyncpg://", 1
+                )
+            elif self.DATABASE_URL.startswith("postgresql://"):
+                self.DATABASE_URL = self.DATABASE_URL.replace(
+                    "postgresql://", "postgresql+asyncpg://", 1
+                )
+            
+            print(f"✅ Используется DATABASE_URL из окружения")
             return self
 
+        # Локальная разработка
         if self.DB_USER and self.DB_HOST and self.DB_NAME:
             self.DATABASE_URL = (
                 f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@"
                 f"{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
             )
+            print(f"✅ Собран DATABASE_URL из компонентов")
         else:
             self.DATABASE_URL = "postgresql+asyncpg://user:pass@localhost/dbname"
-            print("WARNING: Database config not found. Using dummy URL.")
+            print("⚠️ WARNING: Database config not found. Using dummy URL.")
 
         return self
 

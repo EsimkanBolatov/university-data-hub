@@ -13,3 +13,4 @@ alembic/__pycache__/
 .idea/
 .vscode/
 *.log
+.env.local
