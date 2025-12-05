@@ -22,15 +22,12 @@ python-dateutil==2.9.0.post0
 
 # Для парсинга файлов (PDF, Word, Excel, Web)
 beautifulsoup4==4.12.3
-requests==2.31.0
+requests==2.32.5
 python-docx
 pypdf
 openpyxl
 
 # AI Module (Искусственный интеллект)
 openai>=1.0.0
-langchain>=0.1.0
-langchain-openai
-langchain-community
 chromadb
 tiktoken

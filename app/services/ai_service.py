@@ -1,215 +1,286 @@
-# app/services/ai_service.py
 import json
-from typing import List
+import os
+import asyncio
+from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.vectorstores import Chroma
-from langchain.docstore.document import Document
-from langchain.prompts import ChatPromptTemplate
-from langchain.chains import LLMChain
-import os
+
+from openai import AsyncOpenAI
+import chromadb
+from chromadb.config import Settings
 
 from app.core.config import settings
 from app.db.models import University, Program
 
-# Инициализация OpenAI
-llm = ChatOpenAI(
-    api_key=settings.OPENAI_API_KEY, 
-    model_name=settings.OPENAI_MODEL,
-    temperature=0
-)
+# === НАСТРОЙКИ ===
+CHROMA_PATH = "./chroma_db"
+EMBEDDING_MODEL = "text-embedding-3-small"
 
-# Инициализация Vector DB (локально)
-embeddings = OpenAIEmbeddings(
-    api_key=settings.OPENAI_API_KEY,
-    model="text-embedding-3-small" # Рекомендуемая модель для эмбеддингов (дешевле и лучше старой davinci)
-)
+class AIComponents:
+    """
+    Singleton для клиентов OpenAI и ChromaDB.
+    Инициализируется лениво (при первом обращении).
+    """
+    _openai_client = None
+    _chroma_client = None
+    _collection = None
 
-vector_db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+    @classmethod
+    def get_openai(cls):
+        if cls._openai_client is None:
+            cls._openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        return cls._openai_client
+
+    @classmethod
+    def get_collection(cls):
+        if cls._chroma_client is None:
+            # Инициализация нативного клиента ChromaDB
+            cls._chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+            
+            # Создаем или получаем коллекцию
+            cls._collection = cls._chroma_client.get_or_create_collection(
+                name="university_data",
+                metadata={"hnsw:space": "cosine"} # Используем косинусное сходство
+            )
+        return cls._collection
 
 class AIService:
-    
+
+    @staticmethod
+    def _clean_json_response(text: str) -> Dict:
+        """Очищает ответ от Markdown ```json ... ``` и парсит"""
+        text = text.strip()
+        if text.startswith("```"):
+            # Удаляем первую строку (```json) и последнюю (```)
+            text = text.split("\n", 1)[-1].rsplit("\n", 1)[0]
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse JSON", "raw": text}
+
+    @staticmethod
+    async def _get_embedding(text: str) -> List[float]:
+        """Получает вектор для текста напрямую через OpenAI"""
+        client = AIComponents.get_openai()
+        # Заменяем переносы строк, чтобы не портить эмбеддинг
+        text = text.replace("\n", " ")
+        response = await client.embeddings.create(input=[text], model=EMBEDDING_MODEL)
+        return response.data[0].embedding
+
+    @staticmethod
+    async def _get_embeddings_batch(texts: List[str]) -> List[List[float]]:
+        """Пакетное получение векторов (экономит время)"""
+        client = AIComponents.get_openai()
+        # OpenAI принимает до 2048 текстов в батче, но лучше слать по 100
+        clean_texts = [t.replace("\n", " ") for t in texts]
+        response = await client.embeddings.create(input=clean_texts, model=EMBEDDING_MODEL)
+        return [item.embedding for item in response.data]
+
+    # ==========================================
+    # 1. Синхронизация БД -> Векторы
+    # ==========================================
     @staticmethod
     async def sync_database_to_vector_db(db: AsyncSession):
-        """
-        Считывает все университеты и программы из SQL, создает текстовые чанки 
-        и сохраняет их в векторную базу для RAG.
-        """
-        # 1. Получаем данные
-        uni_result = await db.execute(select(University))
-        universities = uni_result.scalars().all()
+        collection = AIComponents.get_collection()
         
-        prog_result = await db.execute(select(Program))
-        programs = prog_result.scalars().all()
-        
+        # 1. Загружаем данные из SQL
+        unis = (await db.execute(select(University))).scalars().all()
+        progs = (await db.execute(select(Program))).scalars().all()
+
+        ids = []
         documents = []
-        
-        # 2. Формируем документы для ВУЗов
-        for uni in universities:
-            content = (
-                f"Университет: {uni.name_ru} ({uni.city}). "
-                f"Рейтинг: {uni.rating}. Тип: {uni.type}. "
-                f"Описание: {uni.description}. Миссия: {uni.mission}. "
-                f"Общежитие: {'Есть' if uni.has_dormitory else 'Нет'}. "
-                f"Стоимость от {uni.programs[0].price if uni.programs else 'Н/Д'}."
+        metadatas = []
+
+        # Формируем списки для ВУЗов
+        for uni in unis:
+            text = (
+                f"ВУЗ: {uni.name_ru}. Город: {uni.city}. Рейтинг: {uni.rating}. "
+                f"Тип: {uni.type}. Описание: {uni.description}. "
+                f"Общежитие: {'Есть' if uni.has_dormitory else 'Нет'}."
             )
-            # Metadata поможет фильтровать поиск
-            meta = {"type": "university", "id": uni.id, "city": uni.city}
-            documents.append(Document(page_content=content, metadata=meta))
-            
-        # 3. Формируем документы для Программ
-        for prog in programs:
-            content = (
+            ids.append(f"uni_{uni.id}")
+            documents.append(text)
+            metadatas.append({"type": "university", "db_id": uni.id, "city": uni.city})
+
+        # Формируем списки для Программ
+        for prog in progs:
+            text = (
                 f"Программа: {prog.name_ru}. ВУЗ ID: {prog.university_id}. "
                 f"Степень: {prog.degree}. Цена: {prog.price} KZT. "
-                f"Предметы: {prog.main_subjects}. Мин. балл: {prog.min_score}."
+                f"Предметы: {prog.main_subjects}."
             )
-            meta = {"type": "program", "id": prog.id, "university_id": prog.university_id}
-            documents.append(Document(page_content=content, metadata=meta))
+            ids.append(f"prog_{prog.id}")
+            documents.append(text)
+            metadatas.append({"type": "program", "db_id": prog.id, "uni_id": prog.university_id})
 
-        # 4. Обновляем векторную базу
-        if documents:
-            # Для простоты MVP - удаляем старое и пишем новое (в проде нужен upsert)
-            vector_db.delete_collection() 
-            vector_db.add_documents(documents)
-            return {"status": "success", "count": len(documents)}
-        return {"status": "empty"}
+        if not documents:
+            return {"status": "empty"}
 
+        # 2. Генерируем векторы (Batching)
+        # Разбиваем на пачки по 100 штук, чтобы не словить Timeout
+        batch_size = 100
+        total_processed = 0
+        
+        # Удаляем старые данные (для простоты MVP перезаписываем всё)
+        try:
+            # ChromaDB не имеет delete_all, поэтому удаляем коллекцию и создаем заново
+            AIComponents._chroma_client.delete_collection("university_data")
+            AIComponents._collection = AIComponents._chroma_client.create_collection("university_data")
+            collection = AIComponents._collection
+        except:
+            pass
+
+        for i in range(0, len(documents), batch_size):
+            batch_docs = documents[i : i + batch_size]
+            batch_ids = ids[i : i + batch_size]
+            batch_meta = metadatas[i : i + batch_size]
+
+            # Получаем векторы от OpenAI
+            embeddings = await AIService._get_embeddings_batch(batch_docs)
+
+            # Сохраняем в Chroma
+            collection.add(
+                ids=batch_ids,
+                embeddings=embeddings,
+                documents=batch_docs,
+                metadatas=batch_meta
+            )
+            total_processed += len(batch_docs)
+
+        return {"status": "success", "count": total_processed}
+
+    # ==========================================
+    # 2. Чат (RAG)
+    # ==========================================
+    @staticmethod
+    async def chat_rag(question: str):
+        client = AIComponents.get_openai()
+        collection = AIComponents.get_collection()
+
+        # 1. Векторизуем вопрос
+        query_vec = await AIService._get_embedding(question)
+
+        # 2. Ищем похожие документы в Chroma
+        results = collection.query(
+            query_embeddings=[query_vec],
+            n_results=4  # Топ-4 факта
+        )
+        
+        # Извлекаем текст найденных документов
+        context_list = results['documents'][0]
+        context_str = "\n\n".join(context_list)
+
+        # 3. Формируем промпт
+        system_msg = (
+            "Ты полезный ассистент University DataHub. "
+            "Отвечай на вопросы ТОЛЬКО на основе предоставленного контекста. "
+            "Если информации нет, так и скажи. Не выдумывай."
+        )
+        
+        user_msg = f"Контекст:\n{context_str}\n\nВопрос: {question}"
+
+        # 4. Запрос к GPT
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg}
+            ],
+            temperature=0.3
+        )
+
+        return response.choices[0].message.content
+
+    # ==========================================
+    # 3. Рекомендации (SQL + GPT)
+    # ==========================================
     @staticmethod
     async def get_recommendations(user_prefs: dict, db: AsyncSession):
-        """
-        Гибридная рекомендация: SQL фильтр + AI ранжирование
-        """
-        # Шаг 1: Грубый фильтр через SQL (по бюджету и городу)
-        query = select(University)
+        client = AIComponents.get_openai()
+
+        # 1. SQL Фильтр
+        stmt = select(University)
         if user_prefs.get("city"):
-            query = query.where(University.city == user_prefs["city"])
-            
-        result = await db.execute(query)
-        candidates = result.scalars().all()
+            stmt = stmt.where(University.city == user_prefs["city"])
         
-        # Превращаем кандидатов в краткий текст для AI
+        candidates = (await db.execute(stmt.limit(10))).scalars().all()
+        
+        if not candidates:
+            return {"message": "Нет вузов по заданным фильтрам"}
+
         candidates_text = "\n".join([
-            f"ID {u.id}: {u.name_ru}, Рейтинг: {u.rating}, Описание: {u.description[:200]}..." 
+            f"- ID {u.id}: {u.name_ru} (Рейтинг: {u.rating}, Описание: {u.description[:150]}...)"
             for u in candidates
         ])
 
-        # Шаг 2: AI выбирает лучших на основе интересов
-        prompt = ChatPromptTemplate.from_template(
-            """
-            Ты эксперт по поступлению. Пользователь ищет ВУЗ.
-            
-            Параметры пользователя:
-            - Баллы ЕНТ: {score}
-            - Интересы: {interests}
-            - Бюджет: {budget}
-            
-            Список доступных кандидатов (прошли фильтр по городу):
-            {candidates}
-            
-            Задание: Выбери ТОП-3 наиболее подходящих ВУЗа из списка.
-            Для каждого напиши:
-            1. Почему подходит (Match score)
-            2. Риски (если баллов мало или дорого)
-            
-            Ответ верни строго в JSON формате: 
-            [{{ "university_id": int, "reason": str, "match_percentage": int }}]
-            """
+        # 2. Промпт
+        system_msg = (
+            "Ты эксперт по поступлению. Выбери топ-3 вуза для студента. "
+            "Верни ответ строго в JSON формате: "
+            '[{"university_id": 1, "reason": "...", "match_score": 95}]'
         )
         
-        chain = prompt | llm
-        response = await chain.ainvoke({
-            "score": user_prefs.get("score"),
-            "interests": user_prefs.get("interests"),
-            "budget": user_prefs.get("budget"),
-            "candidates": candidates_text
-        })
-        
-        # Парсим JSON из ответа AI
-        try:
-            content = response.content.replace("```json", "").replace("```", "")
-            return json.loads(content)
-        except:
-            return {"error": "AI response parsing failed", "raw": response.content}
+        user_msg = (
+            f"Студент: Баллы {user_prefs.get('score')}, Интересы: {user_prefs.get('interests')}, Бюджет: {user_prefs.get('budget')}.\n"
+            f"Список кандидатов:\n{candidates_text}"
+        )
 
+        # 3. Запрос
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg}
+            ],
+            temperature=0.0
+        )
+
+        return AIService._clean_json_response(response.choices[0].message.content)
+
+    # ==========================================
+    # 4. Сравнение
+    # ==========================================
     @staticmethod
     async def compare_universities(uni_ids: List[int], db: AsyncSession):
-        """
-        Сравнивает университеты, генерируя аналитический текст
-        """
-        result = await db.execute(select(University).where(University.id.in_(uni_ids)))
-        unis = result.scalars().all()
+        client = AIComponents.get_openai()
         
-        # Сериализуем данные в JSON для AI
-        data_json = json.dumps([{
-            "name": u.name_ru, 
-            "rating": u.rating, 
-            "price_range": "...", # Тут нужно вытащить реальные цены
-            "has_dorm": u.has_dormitory,
-            "employment": u.employment_rate
-        } for u in unis], ensure_ascii=False)
+        stmt = select(University).where(University.id.in_(uni_ids))
+        unis = (await db.execute(stmt)).scalars().all()
+        
+        data_text = "\n".join([
+            f"{u.name_ru}: Рейтинг {u.rating}, Студентов {u.total_students}, Общежитие {u.has_dormitory}" 
+            for u in unis
+        ])
 
-        prompt = ChatPromptTemplate.from_template(
-            """
-            Сравни следующие университеты для абитуриента:
-            {data}
-            
-            Сделай вывод в виде таблицы (Markdown) и краткого резюме: 
-            какой вуз лучше для карьеры, а какой для студенческой жизни.
-            """
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Сравни университеты и выведи результат в Markdown таблице."},
+                {"role": "user", "content": data_text}
+            ]
         )
-        
-        chain = prompt | llm
-        response = await chain.ainvoke({"data": data_json})
-        return response.content
+        return response.choices[0].message.content
 
-    @staticmethod
-    async def chat_rag(question: str):
-        """
-        RAG: Поиск контекста в ChromaDB -> Ответ LLM
-        """
-        # 1. Поиск похожих кусков в базе
-        docs = vector_db.similarity_search(question, k=4)
-        context_text = "\n\n".join([d.page_content for d in docs])
-        
-        # 2. Генерация ответа
-        prompt = ChatPromptTemplate.from_template(
-            """
-            Ты полезный ассистент University DataHub. Отвечай на вопросы только на основе предоставленного контекста.
-            Если в контексте нет информации, скажи "К сожалению, у меня нет этой информации в базе".
-            Не выдумывай факты. Отвечай на том же языке, на котором задан вопрос (RU/KZ).
-            
-            Контекст:
-            {context}
-            
-            Вопрос: {question}
-            """
-        )
-        
-        chain = prompt | llm
-        response = await chain.ainvoke({"context": context_text, "question": question})
-        return response.content
-        
+    # ==========================================
+    # 5. Парсинг текста (Админка)
+    # ==========================================
     @staticmethod
     async def parse_unstructured_text(text: str):
-        """
-        Для админки: структурирует "сырой" текст в JSON
-        """
-        prompt = ChatPromptTemplate.from_template(
-            """
-            Проанализируй текст об университете и извлеки структуру в JSON.
-            Поля: "history" (текст), "mission" (текст), "contacts" (объект с phone, email).
-            Если данных нет, ставь null.
-            
-            Текст:
-            {text}
-            """
+        client = AIComponents.get_openai()
+        
+        system_msg = (
+            "Извлеки структуру из текста в JSON формате с ключами: "
+            "history (str), mission (str), contacts (object). "
+            "Если данных нет, ставь null."
         )
-        chain = prompt | llm
-        response = await chain.ainvoke({"text": text})
-        try:
-             content = response.content.replace("```json", "").replace("```", "")
-             return json.loads(content)
-        except:
-            return {"error": "Parsing failed"}
+
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": text[:4000]} # Обрезаем, чтобы не превысить токены
+            ],
+            temperature=0.0
+        )
+        
+        return AIService._clean_json_response(response.choices[0].message.content)
