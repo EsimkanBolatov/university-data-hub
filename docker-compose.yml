@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   db:
@@ -29,10 +29,23 @@ services:
       db:
         condition: service_healthy
     command: >
-      sh -c "alembic upgrade head && 
+      sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
     volumes:
       - .:/app
+
+  frontend:
+    build: ../University_DataHub_Frontend
+    container_name: university_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+    volumes:
+      - ../University_DataHub_Frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:
