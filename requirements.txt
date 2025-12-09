@@ -31,3 +31,5 @@ openpyxl
 openai>=1.0.0
 chromadb
 tiktoken
+
+aiohttp

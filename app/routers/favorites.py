@@ -56,6 +56,10 @@ class ComparisonResult(BaseModel):
     ai_analysis: Optional[str] = None
 
 
+class CompareRequest(BaseModel):
+    university_ids: List[int] = Field(..., min_items=2, max_items=5)
+    include_ai_analysis: bool = False
+
 # --- Избранное ---
 
 @router.post("/add/{university_id}")
@@ -194,14 +198,16 @@ async def check_is_favorite(
 
 @router.post("/compare", response_model=ComparisonResult)
 async def compare_universities(
-        university_ids: List[int] = Field(..., min_items=2, max_items=5),
-        include_ai_analysis: bool = False,
+        request: CompareRequest,  # Используем созданную схему
         db: AsyncSession = Depends(get_db)
 ):
     """
     Сравнить университеты (от 2 до 5)
     Опционально: AI анализ через GPT
     """
+    # Распаковываем данные из request
+    university_ids = request.university_ids
+    include_ai_analysis = request.include_ai_analysis
 
     if len(university_ids) < 2:
         raise HTTPException(400, "Необходимо минимум 2 университета")
