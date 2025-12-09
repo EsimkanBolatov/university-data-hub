@@ -18,8 +18,12 @@ app = FastAPI(
 # CORS настройки
 app.add_middleware(
     CORSMiddleware,
-    # Если фронт на порту 5173, добавьте его явно, хотя "*" тоже сработает
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://frontend:5173",  # Docker
+        "*"  # Development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

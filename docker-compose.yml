@@ -19,12 +19,12 @@ services:
       retries: 5
 
   backend:
-    build: .
+    build: ./University_DataHub_Backend
     container_name: university_backend
     ports:
       - "8080:8080"
     env_file:
-      - .env
+      - ./University_DataHub_Backend/.env
     depends_on:
       db:
         condition: service_healthy
@@ -32,20 +32,21 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
     volumes:
-      - .:/app
+      - ./University_DataHub_Backend:/app
 
   frontend:
-    build: ../University_DataHub_Frontend
+    build: ./University_DataHub_Frontend
     container_name: university_frontend
     ports:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8080
     volumes:
-      - ../University_DataHub_Frontend:/app
+      - ./University_DataHub_Frontend:/app
       - /app/node_modules
     depends_on:
       - backend
+    command: npm run dev -- --host
 
 volumes:
   postgres_data:
