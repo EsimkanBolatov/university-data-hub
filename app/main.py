@@ -4,7 +4,7 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, universities, admin, ai
+from app.routers import auth, universities, admin, ai, catalog
 
 # Примечание: Исправление для Windows перенесено вниз, в блок main,
 # чтобы не конфликтовать с авто-перезагрузкой.
@@ -30,6 +30,7 @@ app.include_router(auth.router)
 app.include_router(universities.router)
 app.include_router(admin.router)
 app.include_router(ai.router)
+app.include_router(catalog.router)
 
 @app.get("/")
 async def root():
