@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from app.routers import auth, universities, admin, ai, catalog, career
+from app.routers import auth, universities, admin, ai, catalog, career, resume_validator
 from app.routers.favorites import router as favorites_router
 
 app = FastAPI(
@@ -39,6 +39,7 @@ app.include_router(ai.router)
 app.include_router(catalog.router)
 app.include_router(favorites_router) 
 app.include_router(career.router) 
+app.include_router(resume_validator.router)
 
 @app.get("/")
 async def root():
