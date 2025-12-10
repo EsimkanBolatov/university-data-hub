@@ -345,3 +345,35 @@ class Profession(Base):
     
     # Связь с вузами
     universities = relationship("University", secondary=university_professions, back_populates="professions")
+
+class CareerTestSession(Base):
+    """Сессия профориентационного теста"""
+    __tablename__ = "career_test_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True) # Может быть анонимным
+    
+    difficulty = Column(String, default="medium") # easy, medium, hard
+    total_questions = Column(Integer, default=10)
+    current_step = Column(Integer, default=1)
+    is_completed = Column(Boolean, default=False)
+    created_at = Column(Date, default=datetime.utcnow)
+    
+    # Результаты (сохраним JSON ответа от AI)
+    result_json = Column(JSON, nullable=True)
+
+    # Связи
+    answers = relationship("CareerTestAnswer", back_populates="session", cascade="all, delete-orphan")
+
+class CareerTestAnswer(Base):
+    """Ответы пользователя внутри сессии"""
+    __tablename__ = "career_test_answers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("career_test_sessions.id"), nullable=False)
+    
+    question_number = Column(Integer, nullable=False)
+    question_text = Column(Text, nullable=False)
+    answer_text = Column(Text, nullable=False)
+
+    session = relationship("CareerTestSession", back_populates="answers")
