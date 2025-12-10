@@ -5,9 +5,10 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, universities, admin, ai, catalog
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-# Импортируем новый роутер
+from app.routers import auth, universities, admin, ai, catalog
 from app.routers.favorites import router as favorites_router
 
 app = FastAPI(
