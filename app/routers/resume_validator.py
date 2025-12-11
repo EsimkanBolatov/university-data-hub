@@ -16,6 +16,15 @@ from app.schemas.resume_validator import (
 )
 from app.services.resume_validator_service import ResumeValidatorService
 
+from fastapi.responses import Response
+from reportlab.pdfgen import canvas # type: ignore
+from reportlab.lib.pagesizes import A4 # type: ignore
+from reportlab.pdfbase import pdfmetrics # type: ignore
+from reportlab.pdfbase.ttfonts import TTFont # type: ignore
+from reportlab.lib import colors # type: ignore
+import io
+import textwrap
+
 router = APIRouter(prefix="/resume-validator", tags=["Resume Validator"])
 
 
@@ -247,3 +256,79 @@ async def get_user_validation_history(
         })
 
     return {"history": history}
+
+@router.get("/export/{session_id}")
+async def export_results_pdf(
+    session_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Экспорт результатов интервью в PDF
+    """
+    # 1. Получаем сессию
+    session = await db.get(CareerTestSession, session_id)
+    if not session or not session.is_completed:
+        raise HTTPException(404, "Результаты не найдены или интервью не завершено")
+
+    verdict = session.result_json.get("final_verdict")
+    if not verdict:
+        raise HTTPException(400, "Вердикт еще не сформирован")
+
+    # 2. Создаем PDF в памяти
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    
+    # Попытка регистрации кириллического шрифта (опционально, иначе будет транслит или квадраты)
+    # Для простоты используем стандартный шрифт, но в реальном проекте лучше подключить .ttf
+    # pdfmetrics.registerFont(TTFont('Arial', 'arial.ttf')) 
+    # c.setFont('Arial', 14)
+    
+    # Упрощенная генерация (для примера без внешних шрифтов пишем на латинице или транслитом, 
+    # так как стандартный шрифт PDF не поддерживает кириллицу "из коробки" без регистрации)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(50, height - 50, f"Career Validator Report #{session_id}")
+    
+    c.setFont("Helvetica", 12)
+    y = height - 100
+    
+    # Основная информация
+    prof = session.result_json.get("target_profession", "Unknown")
+    score = verdict.get("readiness_score", 0)
+    
+    lines = [
+        f"Target Profession: {prof}",
+        f"Readiness Score: {score}%",
+        f"Overall Assessment:",
+    ]
+    
+    # Добавляем текст оценки с переносом строк
+    assessment = verdict.get("overall_feedback", "No feedback")
+    wrapped_text = textwrap.wrap(assessment, width=80)
+    lines.extend(wrapped_text)
+    lines.append("") # пустая строка
+    lines.append("Verified Skills:")
+    
+    for skill in verdict.get("verified_skills", []):
+        name = skill.get("name", "Skill")
+        level = skill.get("level", "Unknown")
+        lines.append(f"- {name} ({level})")
+
+    # Рисуем текст
+    for line in lines:
+        if y < 50: # Новая страница если места нет
+            c.showPage()
+            y = height - 50
+        c.drawString(50, y, line)
+        y -= 20
+
+    c.save()
+    buffer.seek(0)
+
+    # 3. Возвращаем файл
+    filename = f"career_report_{session_id}.pdf"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
