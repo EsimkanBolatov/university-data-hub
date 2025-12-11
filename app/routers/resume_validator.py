@@ -99,16 +99,21 @@ async def submit_interview_answer(
     db.add(answer_record)
 
     # Сохраняем оценку в result_json
-    if "interview_results" not in session.result_json:
-        session.result_json["interview_results"] = []
+    # ВАЖНО: Используем переприсваивание для обновления JSON
+    session_data = dict(session.result_json) if session.result_json else {}
     
-    session.result_json["interview_results"].append({
+    if "interview_results" not in session_data:
+        session_data["interview_results"] = []
+    
+    session_data["interview_results"].append({
         "question_id": request.question_id,
         "score": evaluation["score"],
         "is_correct": evaluation["is_correct"],
         "feedback": evaluation["feedback"],
         "time_taken": request.time_taken_seconds
     })
+    
+    session.result_json = session_data  # Обновляем поле целиком
 
     # 5. Увеличиваем шаг
     session.current_step += 1
@@ -127,7 +132,11 @@ async def submit_interview_answer(
             db=db
         )
         
-        session.result_json["final_verdict"] = verdict
+        # Обновляем JSON с вердиктом
+        session_data = dict(session.result_json)
+        session_data["final_verdict"] = verdict
+        session.result_json = session_data
+        
         await db.commit()
 
         return {

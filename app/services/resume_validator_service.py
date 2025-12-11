@@ -275,7 +275,11 @@ class ResumeValidatorService:
         )
 
         # Сохраняем вопросы в сессию
-        session.result_json["questions"] = questions
+        # ВАЖНО: Создаем копию словаря и переприсваиваем, чтобы SQLAlchemy увидел обновление
+        session_data = dict(session.result_json) if session.result_json else {}
+        session_data["questions"] = questions
+        session.result_json = session_data
+        
         await db.commit()
 
         return {
