@@ -13,12 +13,12 @@ from pathlib import Path
 from app.db.database import get_db
 from app.dependencies import get_current_user
 from app.db.models import User, Skill, SkillMaterial, EmployerChallenge, UserSkillProgress, ChallengeSubmission, MaterialRating
+from app.db.models_skill import MaterialStatus
 from app.schemas.skill import *
 from app.services.syllabus_parser_service import SyllabusParserService
 from app.services.challenge_validator_service import ChallengeValidatorService
 
 router = APIRouter(prefix="/skills", tags=["Skill Tree"])
-
 
 # ============= НАВЫКИ (SKILLS) =============
 
