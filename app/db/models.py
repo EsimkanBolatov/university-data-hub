@@ -3,12 +3,17 @@ from datetime import datetime
 from sqlalchemy import Table, Column, Integer, String, Float, ForeignKey, Enum, Text, Boolean, Date, JSON
 from sqlalchemy.orm import relationship
 from app.db.database import Base
+# УДАЛЕНО: from app.db.models import User (Это вызывало ошибку ImportError: circular import)
+
+# ============ АССОЦИАЦИИ ============
 
 university_professions = Table(
     'university_professions', Base.metadata,
     Column('university_id', Integer, ForeignKey('universities.id'), primary_key=True),
     Column('profession_id', Integer, ForeignKey('professions.id'), primary_key=True)
 )
+
+# ============ ENUMS ============
 
 class RoleEnum(str, enum.Enum):
     USER = "user"
@@ -27,6 +32,8 @@ class DegreeType(str, enum.Enum):
     PHD = "phd"
 
 
+# ============ МОДЕЛИ ПОЛЬЗОВАТЕЛЕЙ ============
+
 class User(Base):
     """Пользователи системы"""
     __tablename__ = "users"
@@ -39,7 +46,17 @@ class User(Base):
 
     # Связь с избранным
     favorites = relationship("Favorite", back_populates="user")
+    
+    # ИСПРАВЛЕНО: Убрана лишняя строка User.skill_progress = ...
+    # КОММЕНТАРИЙ: relationship закомментирован, так как таблицы UserSkillProgress нет в этом файле. 
+    # Раскомментируйте, когда добавите таблицу UserSkillProgress.
+    # skill_progress = relationship("UserSkillProgress", back_populates="user")
+    
+    # Связи для карьерного теста
+    career_sessions = relationship("CareerTestSession", back_populates="user")
 
+
+# ============ УНИВЕРСИТЕТЫ И ОБРАЗОВАНИЕ ============
 
 class University(Base):
     """Университеты"""
@@ -71,6 +88,7 @@ class University(Base):
 
     # Описание
     description = Column(Text, nullable=True)
+    # ИСПРАВЛЕНО: mission был объявлен дважды. Убрал дубликат снизу.
     mission = Column(Text, nullable=True)
     values = Column(Text, nullable=True)
     history = Column(Text, nullable=True)
@@ -118,7 +136,7 @@ class University(Base):
     has_military_department = Column(Boolean, default=False)
 
     # Новые поля для расширенной информации
-    mission = Column(Text, nullable=True)
+    # ИСПРАВЛЕНО: mission удален отсюда (был дубликат)
     history_json = Column(JSON, nullable=True)  # История по годам
     contacts_json = Column(JSON, nullable=True)  # Соцсети, телефоны
     achievements = Column(Text, nullable=True)  # Статус из JSON
@@ -130,7 +148,6 @@ class University(Base):
     grants = relationship("Grant", back_populates="university", cascade="all, delete-orphan")
     partnerships = relationship("Partnership", back_populates="university", cascade="all, delete-orphan")
     professions = relationship("Profession", secondary=university_professions, back_populates="universities")
-
 
 
 class Faculty(Base):
@@ -364,6 +381,8 @@ class CareerTestSession(Base):
 
     # Связи
     answers = relationship("CareerTestAnswer", back_populates="session", cascade="all, delete-orphan")
+    user = relationship("User", back_populates="career_sessions")
+
 
 class CareerTestAnswer(Base):
     """Ответы пользователя внутри сессии"""

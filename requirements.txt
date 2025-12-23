@@ -34,3 +34,5 @@ tiktoken
 
 aiohttp
 reportlab>=4.0.0
+
+Pillow>=10.0.0      # Обработка изображений (для AI Vision)
