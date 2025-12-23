@@ -1,4 +1,5 @@
 # app/main.py
+import os
 import uvicorn
 import sys
 import asyncio
@@ -32,6 +33,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Создаем папку uploads, если её нет
+if not os.path.exists("uploads"):
+    os.makedirs("uploads")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Подключаем роутеры
