@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc
 from datetime import datetime, timedelta
 
-from app.db.models import User, UserSkillProgress, SkillMaterial, ChallengeSubmission
+from app.db.models import User
+from app.db.models_skill import UserSkillProgress, SkillMaterial, ChallengeSubmission
 from app.services.ai_service import AIComponents
 from app.core.config import settings
 
@@ -224,7 +225,7 @@ class GamificationService:
         soft_skills_completed = await db.scalar(soft_skills_query) or 0
         
         # Всего Soft Skills в системе
-        from app.db.models import Skill
+        from app.db.models_skill import Skill
         total_soft_skills = await db.scalar(
             select(func.count(Skill.id)).where(Skill.is_global == True)
         ) or 1
