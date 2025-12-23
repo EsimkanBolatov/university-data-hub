@@ -4,11 +4,12 @@ import sys
 import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from app.routers import auth, universities, admin, ai, catalog, career, resume_validator, skill_tree
+from app.routers import auth, universities, admin, ai, catalog, career, resume_validator, skill_tree, gamification
 from app.routers.favorites import router as favorites_router
 
 app = FastAPI(
@@ -31,6 +32,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 # Подключаем роутеры
 app.include_router(auth.router)
 app.include_router(universities.router)
@@ -41,6 +44,7 @@ app.include_router(favorites_router)
 app.include_router(career.router) 
 app.include_router(resume_validator.router)
 app.include_router(skill_tree.router)
+app.include_router(gamification.router)
 
 @app.get("/")
 async def root():

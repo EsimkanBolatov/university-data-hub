@@ -3,7 +3,6 @@ from datetime import datetime
 from sqlalchemy import Table, Column, Integer, String, Float, ForeignKey, Enum, Text, Boolean, Date, JSON
 from sqlalchemy.orm import relationship
 from app.db.database import Base
-# УДАЛЕНО: from app.db.models import User (Это вызывало ошибку ImportError: circular import)
 
 # ============ АССОЦИАЦИИ ============
 
@@ -47,13 +46,29 @@ class User(Base):
     # Связь с избранным
     favorites = relationship("Favorite", back_populates="user")
     
-    # ИСПРАВЛЕНО: Убрана лишняя строка User.skill_progress = ...
-    # КОММЕНТАРИЙ: relationship закомментирован, так как таблицы UserSkillProgress нет в этом файле. 
-    # Раскомментируйте, когда добавите таблицу UserSkillProgress.
-    # skill_progress = relationship("UserSkillProgress", back_populates="user")
+    achievements_json = Column(
+        JSON, 
+        nullable=True, 
+        default=lambda: {"unlocked": [], "points": 0}
+    )
     
-    # Связи для карьерного теста
-    career_sessions = relationship("CareerTestSession", back_populates="user")
+    notifications_json = Column(
+        JSON, 
+        nullable=True, 
+        default=lambda: {"items": [], "unread_count": 0}
+    )
+    
+    preferences_json = Column(
+        JSON, 
+        nullable=True, 
+        default=lambda: {}
+    )
+    
+    skill_progress = relationship(
+        "UserSkillProgress", 
+        foreign_keys="UserSkillProgress.user_id", 
+        back_populates="user"
+    )
 
 
 # ============ УНИВЕРСИТЕТЫ И ОБРАЗОВАНИЕ ============
