@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.services.ai_service import AIComponents
 from app.core.config import settings
-from app.db.models import (
+from app.db.models_skill import (
     ChallengeSubmission, 
     EmployerChallenge,
     UserSkillProgress,
