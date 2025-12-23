@@ -36,3 +36,5 @@ aiohttp
 reportlab>=4.0.0
 
 Pillow>=10.0.0      # Обработка изображений (для AI Vision)
+
+boto3>=1.34.0 

@@ -3,29 +3,39 @@ from logging.config import fileConfig
 import sys
 import os
 
-import sys
+# 1. СНАЧАЛА добавляем путь к проекту, чтобы Python видел папку 'app'
+# Это должно быть до любых импортов из 'app'
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# 2. Фикс для Windows (SelectorEventLoopPolicy нужен для работы asyncpg на Windows)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from alembic import context
 
-# Добавляем путь к приложению
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
+# 3. Теперь безопасно импортируем настройки и базу
 from app.core.config import settings
 from app.db.database import Base
-# Импортируем модели
-from app.db.models import User, University, Program
+
+# 4. ВАЖНО: Импортируем ВСЕ файлы с моделями.
+# Сам факт импорта регистрирует модели в Base.metadata.
+# Даже если IDE говорит "unused import", не удаляйте их!
+from app.db import models        # Основные модели (User, University и т.д.)
+from app.db import models_skill  # Ваши новые таблицы (Skill, EmployerChallenge и т.д.)
 
 config = context.config
 
-# Подмена URL для Alembic
+# Настройка логирования
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# Подмена URL для Alembic (используем URL из settings)
 db_url = settings.DATABASE_URL
 
+# Заменяем драйвер на асинхронный для работы через Alembic
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
 elif db_url.startswith("postgresql://"):
@@ -33,14 +43,11 @@ elif db_url.startswith("postgresql://"):
 
 config.set_main_option("sqlalchemy.url", db_url)
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
+# Указываем метаданные для автогенерации
 target_metadata = Base.metadata
 
-
 def run_migrations_offline() -> None:
-    """Offline миграции"""
+    """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -60,7 +67,7 @@ def do_run_migrations(connection: Connection):
 
 
 async def run_async_migrations() -> None:
-    """Online миграции"""
+    """Run migrations in 'online' mode."""
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -74,6 +81,7 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
+    """Run migrations in 'online' mode."""
     asyncio.run(run_async_migrations())
 
 
@@ -82,4 +90,5 @@ if context.is_offline_mode():
 else:
     run_migrations_online()
 
-print(f"DEBUG: Connecting to -> {db_url}")
+# Для отладки можно оставить (будет видно в консоли)
+print(f"DEBUG: Connecting to DB for migration...")
