@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, desc
 from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, Query, Path
 
 from app.db.models import User
 from app.db.models_skill import UserSkillProgress, SkillMaterial, ChallengeSubmission

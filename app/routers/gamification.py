@@ -2,7 +2,7 @@
 API роутер для геймификации и уведомлений
 app/routers/gamification.py
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -89,7 +89,7 @@ async def get_my_stats(
 
 
 @router.get("/level/{experience}")
-async def calculate_level(experience: int = Query(..., ge=0)):
+async def calculate_level(experience: int = Path(..., ge=0)):
     """Рассчитать уровень по опыту"""
     return GamificationService.calculate_level(experience)
 
