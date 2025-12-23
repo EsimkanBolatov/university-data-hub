@@ -174,6 +174,7 @@ def downgrade() -> None:
     
     op.drop_index('ix_employer_challenges_skill_id', table_name='employer_challenges')
     op.drop_index('ix_employer_challenges_id', table_name='employer_challenges')
+    op.drop_constraint('challenge_submissions_challenge_id_fkey', 'challenge_submissions', type_='foreignkey')
     op.drop_table('employer_challenges')
     
     op.drop_index('ix_skill_materials_rating', table_name='skill_materials')
