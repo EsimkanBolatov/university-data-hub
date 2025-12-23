@@ -11,7 +11,8 @@ from pathlib import Path
 
 from app.services.ai_service import AIComponents
 from app.core.config import settings
-from app.db.models import Skill, Profession
+from app.db.models import Profession
+from app.db.models_skill import Skill
 
 
 class SyllabusParserService:

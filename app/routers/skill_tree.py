@@ -12,7 +12,16 @@ from pathlib import Path
 
 from app.db.database import get_db
 from app.dependencies import get_current_user
-from app.db.models import User, Skill, SkillMaterial, EmployerChallenge, UserSkillProgress, ChallengeSubmission, MaterialRating
+from app.db.models import User
+from app.db.models_skill import (
+    Skill, 
+    SkillMaterial, 
+    EmployerChallenge, 
+    UserSkillProgress, 
+    ChallengeSubmission, 
+    MaterialRating,
+    MaterialStatus  
+)
 from app.db.models_skill import MaterialStatus
 from app.schemas.skill import *
 from app.services.syllabus_parser_service import SyllabusParserService
