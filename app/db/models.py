@@ -70,6 +70,8 @@ class User(Base):
         back_populates="user"
     )
 
+    career_sessions = relationship("CareerTestSession", back_populates="user", cascade="all, delete-orphan")
+
 
 # ============ УНИВЕРСИТЕТЫ И ОБРАЗОВАНИЕ ============
 
