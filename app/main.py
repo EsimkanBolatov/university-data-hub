@@ -26,7 +26,8 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://frontend:5173",
-        "*"
+        "https://university-data-hub-front-production.up.railway.app",
+        # Звездочку лучше убрать, если используете credentials=True
     ],
     allow_credentials=True,
     allow_methods=["*"],
